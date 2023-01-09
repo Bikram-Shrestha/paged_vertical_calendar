@@ -317,6 +317,7 @@ class _MonthView extends StatelessWidget {
               year: month.year,
             ),
         GridView.builder(
+          addRepaintBoundaries: false,
           physics: NeverScrollableScrollPhysics(),
           shrinkWrap: true,
           padding: EdgeInsets.zero,
