@@ -32,3 +32,24 @@ class Week {
     return 'Week{firstDay: $firstDay, lastDay: $lastDay}';
   }
 }
+
+enum WeekDay { monday, tuesday, wednesday, thursday, friday, saturday, sunday }
+
+extension WeekDayX on WeekDay {
+  // In Dart monday is 1 and sunday is 7 so to get correct value by enum we can
+  // add one to make it relevant
+  int get valueEquivalentToDartImplementation => index + 1;
+}
+
+WeekDay getWeekDayByDartDayValue(int dayValue) {
+  if (dayValue > 7 || dayValue < 1) {
+    throw WeekDayOutOfRangeException('$dayValue is not within range of 1 - 7');
+  }
+  return WeekDay.values[dayValue - 1];
+}
+
+class WeekDayOutOfRangeException implements Exception {
+  final String message;
+
+  WeekDayOutOfRangeException(this.message);
+}
