@@ -44,6 +44,7 @@ class PagedVerticalCalendar extends StatefulWidget {
     this.scrollController,
     this.listPadding = EdgeInsets.zero,
     this.startWeekWithSunday = false,
+    this.weekdaysToHide = const [],
   }) : this.initialDate = initialDate ?? DateTime.now().removeTime();
 
   /// the [DateTime] to start the calendar from, if no [startDate] is provided
@@ -100,6 +101,10 @@ class PagedVerticalCalendar extends StatefulWidget {
 
   /// Select start day of the week to be Sunday
   final bool startWeekWithSunday;
+
+  /// Hide certain Weekdays eg.Weekends by providing
+  /// `[WeekDay.saturday,WeekDay.sunday]`. defaults to `[]`
+  final List<WeekDay> weekdaysToHide;
 
   @override
   _PagedVerticalCalendarState createState() => _PagedVerticalCalendarState();
@@ -246,6 +251,7 @@ class _PagedVerticalCalendarState extends State<PagedVerticalCalendar> {
                       dayBuilder: widget.dayBuilder,
                       onDayPressed: widget.onDayPressed,
                       startWeekWithSunday: widget.startWeekWithSunday,
+                      weekDaysToHide: widget.weekdaysToHide,
                     );
                   },
                 ),
@@ -256,12 +262,12 @@ class _PagedVerticalCalendarState extends State<PagedVerticalCalendar> {
               builderDelegate: PagedChildBuilderDelegate<Month>(
                 itemBuilder: (BuildContext context, Month month, int index) {
                   return _MonthView(
-                    month: month,
-                    monthBuilder: widget.monthBuilder,
-                    dayBuilder: widget.dayBuilder,
-                    onDayPressed: widget.onDayPressed,
-                    startWeekWithSunday: widget.startWeekWithSunday,
-                  );
+                      month: month,
+                      monthBuilder: widget.monthBuilder,
+                      dayBuilder: widget.dayBuilder,
+                      onDayPressed: widget.onDayPressed,
+                      startWeekWithSunday: widget.startWeekWithSunday,
+                      weekDaysToHide: widget.weekdaysToHide);
                 },
               ),
             ),
@@ -285,6 +291,7 @@ class _MonthView extends StatelessWidget {
     this.monthBuilder,
     this.dayBuilder,
     this.onDayPressed,
+    required this.weekDaysToHide,
     required this.startWeekWithSunday,
   });
 
@@ -293,9 +300,14 @@ class _MonthView extends StatelessWidget {
   final DayBuilder? dayBuilder;
   final ValueChanged<DateTime>? onDayPressed;
   final bool startWeekWithSunday;
+  final List<WeekDay> weekDaysToHide;
 
   @override
   Widget build(BuildContext context) {
+    final indexOfFirstDay = getIndexOfFirstValidDayInMonth(
+        month, weekDaysToHide,
+        isSundayFirstDayOfWeek: startWeekWithSunday);
+    final validDates = listOfDatesInMonth(month, weekDaysToHide);
     return Column(
       children: <Widget>[
         /// display the default month header if none is provided
@@ -304,52 +316,35 @@ class _MonthView extends StatelessWidget {
               month: month.month,
               year: month.year,
             ),
-        Table(
-          children: month.weeks.map((Week week) {
-            return _generateWeekRow(context, week, startWeekWithSunday);
-          }).toList(growable: false),
+        GridView.builder(
+          addRepaintBoundaries: false,
+          physics: NeverScrollableScrollPhysics(),
+          shrinkWrap: true,
+          padding: EdgeInsets.zero,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: WeekDay.values.length - weekDaysToHide.length),
+          itemCount: validDates.length + indexOfFirstDay,
+          itemBuilder: (BuildContext context, int index) {
+            if (index < indexOfFirstDay) {
+              return SizedBox();
+            } else {
+              final date = validDates[index - indexOfFirstDay];
+              return AspectRatio(
+                aspectRatio: 1.0,
+                child: InkWell(
+                  onTap:
+                      onDayPressed == null ? null : () => onDayPressed!(date),
+                  child: dayBuilder?.call(context, date) ??
+                      _DefaultDayView(date: date),
+                ),
+              );
+            }
+          },
         ),
         SizedBox(
           height: 20,
         ),
       ],
-    );
-  }
-
-  TableRow _generateWeekRow(
-      BuildContext context, Week week, bool startWeekWithSunday) {
-    DateTime firstDay = week.firstDay;
-
-    return TableRow(
-      children: List<Widget>.generate(
-        DateTime.daysPerWeek,
-        (int position) {
-          DateTime day = DateTime(
-            week.firstDay.year,
-            week.firstDay.month,
-            firstDay.day +
-                (position -
-                    (DateUtils.getWeekDay(firstDay, startWeekWithSunday) - 1)),
-          );
-
-          if ((position + 1) <
-                  DateUtils.getWeekDay(week.firstDay, startWeekWithSunday) ||
-              (position + 1) >
-                  DateUtils.getWeekDay(week.lastDay, startWeekWithSunday)) {
-            return const SizedBox();
-          } else {
-            return AspectRatio(
-              aspectRatio: 1.0,
-              child: InkWell(
-                onTap: onDayPressed == null ? null : () => onDayPressed!(day),
-                child: dayBuilder?.call(context, day) ??
-                    _DefaultDayView(date: day),
-              ),
-            );
-          }
-        },
-        growable: false,
-      ),
     );
   }
 }
@@ -407,3 +402,41 @@ typedef MonthBuilder = Widget Function(
 typedef DayBuilder = Widget Function(BuildContext context, DateTime date);
 
 typedef OnMonthLoaded = void Function(int year, int month);
+
+List<DateTime> listOfDatesInMonth(Month month, List<WeekDay> weekdaysToHide) {
+  final totalDays = month.daysInMonth;
+  final validDates = <DateTime>[];
+  for (int i = 1; i <= totalDays; i++) {
+    final date = DateTime(month.year, month.month, i);
+    if (!weekdaysToHide.contains(getWeekDayByDartDayValue(date.weekday))) {
+      validDates.add(date);
+    }
+  }
+  return (validDates);
+}
+
+int getIndexOfFirstValidDayInMonth(Month month, List<WeekDay> weekdaysToHide,
+    {required bool isSundayFirstDayOfWeek}) {
+  late DateTime firstValidDate;
+  for (int i = 1; i <= WeekDay.values.length; i++) {
+    final date = DateTime(month.year, month.month, i);
+    if (!weekdaysToHide.contains(getWeekDayByDartDayValue(date.weekday))) {
+      firstValidDate = date;
+      break;
+    }
+  }
+  final mondayWeekDayList = [...WeekDay.values];
+  final sundayWeekDayList = [
+    WeekDay.sunday,
+    ...[...mondayWeekDayList]..remove(WeekDay.sunday),
+  ];
+  mondayWeekDayList.removeWhere((weekday) => weekdaysToHide.contains(weekday));
+  sundayWeekDayList.removeWhere((weekday) => weekdaysToHide.contains(weekday));
+  final weekdayValueForValidDay =
+      getWeekDayByDartDayValue(firstValidDate.weekday);
+  final indexOfFirstValidDate = isSundayFirstDayOfWeek
+      ? sundayWeekDayList.indexOf(weekdayValueForValidDay)
+      : mondayWeekDayList.indexOf(weekdayValueForValidDay);
+
+  return indexOfFirstValidDate;
+}
